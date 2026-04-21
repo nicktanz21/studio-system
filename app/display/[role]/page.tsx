@@ -1,5 +1,7 @@
 "use client";
 
+import { use } from "react";
+import { supabase } from "@/lib/supabase";
 import { useEffect, useRef, useState } from "react";
 
 type Order = {
@@ -8,7 +10,8 @@ type Order = {
   status: "waiting" | "serving" | "done";
 };
 
-export default function Page({ params }: { params: { role: string } }) {
+export default function Page({ params }: { params: Promise<{ role: string }> }) {
+  const { role } = use(params);
   const [nowServing, setNowServing] = useState<Order | null>(null);
   const [queue, setQueue] = useState<Order[]>([]);
   const prevServing = useRef<string | null>(null);
@@ -19,32 +22,51 @@ export default function Page({ params }: { params: { role: string } }) {
   }, []);
 
   const fetchOrders = async () => {
-    try {
-      const res = await fetch(`/api/orders?station=${params.role}`, {
-        cache: "no-store",
-      });
-      const data: Order[] = await res.json();
+  const { data, error } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("station", role)
+    .order("created_at", { ascending: true });
 
-      const serving = data.find((o) => o.status === "serving") || null;
-      const waiting = data.filter((o) => o.status === "waiting");
+  if (error) {
+    console.error(error);
+    return;
+  }
 
-      if (serving && prevServing.current !== serving.id) {
-        prevServing.current = serving.id;
-        audioRef.current?.play().catch(() => {});
+  const serving = data.find((o) => o.status === "serving") || null;
+  const waiting = data.filter((o) => o.status === "waiting");
+
+  if (serving && prevServing.current !== serving.id) {
+    prevServing.current = serving.id;
+    audioRef.current?.play().catch(() => {});
+  }
+
+  setNowServing(serving);
+  setQueue(waiting);
+};
+
+useEffect(() => {
+  fetchOrders();
+
+  const channel = supabase
+    .channel("orders-realtime")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "orders",
+      },
+      () => {
+        fetchOrders(); // 🔥 auto refresh when DB changes
       }
+    )
+    .subscribe();
 
-      setNowServing(serving);
-      setQueue(waiting);
-    } catch (e) {
-      console.log(e);
-    }
+  return () => {
+    supabase.removeChannel(channel);
   };
-
-  useEffect(() => {
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 2000);
-    return () => clearInterval(interval);
-  }, [params.role]);
+}, [params.role]);
 
   return (
     <div style={styles.container}>
@@ -160,3 +182,4 @@ const styles: any = {
     fontSize: "1.2rem",
   },
 };
+
