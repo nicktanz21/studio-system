@@ -48,8 +48,27 @@ export default function Page({ params }: { params: { role: string } }) {
 
   return (
     <div style={styles.container}>
+      {/* ANIMATIONS */}
+      <style>
+        {`
+        @keyframes float {
+          0% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+          100% { transform: translateY(0px); }
+        }
+
+        @keyframes pulse {
+          0% { box-shadow: 0 0 10px rgba(0,255,150,0.2); }
+          50% { box-shadow: 0 0 40px rgba(0,255,150,0.5); }
+          100% { box-shadow: 0 0 10px rgba(0,255,150,0.2); }
+        }
+        `}
+      </style>
+
       {/* LOGO */}
-      <img src="/logo-v2.png" style={styles.logo} />
+      <div style={styles.logoWrapper}>
+        <img src="/logo-v2.png" style={styles.logo} />
+      </div>
 
       {/* TITLE */}
       <h1 style={styles.title}>STREAMS STUDIO</h1>
@@ -78,7 +97,7 @@ export default function Page({ params }: { params: { role: string } }) {
 
 const styles: any = {
   container: {
-    background: "black",
+    background: "radial-gradient(circle at center, #0b2e1f, black)",
     color: "white",
     height: "100vh",
     display: "flex",
@@ -87,9 +106,15 @@ const styles: any = {
     justifyContent: "center",
   },
 
+  logoWrapper: {
+    position: "relative",
+    marginBottom: 20,
+  },
+
   logo: {
     width: 140,
-    marginBottom: 20,
+    animation: "float 4s ease-in-out infinite",
+    filter: "drop-shadow(0 0 12px rgba(0,255,150,0.6))",
   },
 
   title: {
@@ -107,6 +132,7 @@ const styles: any = {
     padding: "40px 80px",
     borderRadius: 25,
     marginBottom: 30,
+    animation: "pulse 2s infinite",
   },
 
   label: {
