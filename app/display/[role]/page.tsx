@@ -49,7 +49,7 @@ export default function Page({ params }: { params: { role: string } }) {
   return (
     <div style={styles.container}>
       {/* LOGO */}
-      <img src="/logo.png" style={styles.logo} />
+      <img src="/logo-v2.png" style={styles.logo} />
 
       {/* TITLE */}
       <h1 style={styles.title}>STREAMS STUDIO</h1>
