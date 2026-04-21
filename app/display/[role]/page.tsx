@@ -1,171 +1,197 @@
 "use client";
 
-import { use } from "react";
-import { supabase } from "@/lib/supabase";
+import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 type Order = {
   id: string;
   name: string;
+  queue_number: number;
+  step: string;
   status: "waiting" | "serving" | "done";
 };
 
-export default function Page({ params }: { params: Promise<{ role: string }> }) {
-  const { role } = use(params);
+export default function DisplayPage() {
+  const params = useParams();
+  const role = params.role as string;
+
   const [nowServing, setNowServing] = useState<Order | null>(null);
   const [queue, setQueue] = useState<Order[]>([]);
-  const prevServing = useRef<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const prevId = useRef<string | null>(null);
 
-  useEffect(() => {
-    audioRef.current = new Audio("/alert.mp3");
-  }, []);
+  const formatQueue = (num?: number) =>
+    num ? "#" + String(num).padStart(3, "0") : "---";
 
-  const fetchOrders = async () => {
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("station", role)
-    .order("created_at", { ascending: true });
+  // 🔊 Voice (stable)
+  const speak = (text: string) => {
+    if (typeof window === "undefined") return;
 
-  if (error) {
-    console.error(error);
-    return;
-  }
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.9;
+    utter.pitch = 1;
 
-  const serving = data.find((o) => o.status === "serving") || null;
-  const waiting = data.filter((o) => o.status === "waiting");
-
-  if (serving && prevServing.current !== serving.id) {
-    prevServing.current = serving.id;
-    audioRef.current?.play().catch(() => {});
-  }
-
-  setNowServing(serving);
-  setQueue(waiting);
-};
-
-useEffect(() => {
-  fetchOrders();
-
-  const channel = supabase
-    .channel("orders-realtime")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "orders",
-      },
-      () => {
-        fetchOrders(); // 🔥 auto refresh when DB changes
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
+    window.speechSynthesis.cancel(); // prevent stacking
+    window.speechSynthesis.speak(utter);
   };
-}, [params.role]);
+
+  // 🔥 FETCH
+  const fetchOrders = async () => {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const serving = data.find((o) => o.status === "serving") || null;
+    const waiting = data.filter((o) => o.status === "waiting");
+
+    // 🔊 announce only when changed
+    if (serving && prevId.current !== serving.id) {
+      prevId.current = serving.id;
+
+      speak(
+        `Now serving number ${serving.queue_number} at ${role} station`
+      );
+    }
+
+    setNowServing(serving);
+    setQueue(waiting);
+  };
+
+  // 🔁 REALTIME
+  useEffect(() => {
+    fetchOrders();
+
+    const channel = supabase
+      .channel("display-" + role)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        fetchOrders
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [role]);
 
   return (
     <div style={styles.container}>
-      {/* ANIMATIONS */}
-      <style>
-        {`
-        @keyframes float {
-          0% { transform: translateY(0px); }
-          50% { transform: translateY(-10px); }
-          100% { transform: translateY(0px); }
-        }
-
-        @keyframes pulse {
-          0% { box-shadow: 0 0 10px rgba(0,255,150,0.2); }
-          50% { box-shadow: 0 0 40px rgba(0,255,150,0.5); }
-          100% { box-shadow: 0 0 10px rgba(0,255,150,0.2); }
-        }
-        `}
-      </style>
-
       {/* LOGO */}
-      <div style={styles.logoWrapper}>
-        <img src="/logo-v2.png" style={styles.logo} />
-      </div>
+      <img src="/logo.png" style={styles.logo} />
 
       {/* TITLE */}
-      <h1 style={styles.title}>STREAMS STUDIO</h1>
-      <div style={styles.station}>TOGA STATION</div>
+      <div style={styles.header}>
+        <h1 style={styles.title}>STREAMS STUDIO</h1>
+        <div style={styles.station}>
+          {role?.toUpperCase()} STATION
+        </div>
+      </div>
 
       {/* NOW SERVING */}
       <div style={styles.card}>
         <div style={styles.label}>NOW SERVING</div>
+
+        <div style={styles.number}>
+          {formatQueue(nowServing?.queue_number)}
+        </div>
+
         <div style={styles.name}>
-          {nowServing?.name || "— — —"}
+          {nowServing?.name || "WAITING..."}
         </div>
       </div>
 
       {/* QUEUE */}
       <div style={styles.queue}>
         <div style={styles.upNext}>UP NEXT</div>
-        {queue.slice(0, 3).map((q, i) => (
+
+        {queue.length === 0 && (
+          <div style={{ opacity: 0.5 }}>No queue</div>
+        )}
+
+        {queue.slice(0, 3).map((q) => (
           <div key={q.id} style={styles.queueItem}>
-            #{String(i + 1).padStart(3, "0")} {q.name}
+            {formatQueue(q.queue_number)} — {q.name}
           </div>
         ))}
       </div>
+
+      {/* 🔥 CSS ANIMATION FIX */}
+      <style jsx global>{`
+        @keyframes float {
+          0% { transform: translateY(0px); }
+          50% { transform: translateY(-12px); }
+          100% { transform: translateY(0px); }
+        }
+      `}</style>
     </div>
   );
 }
 
+/* 🎨 PREMIUM STYLES */
 const styles: any = {
   container: {
-    background: "radial-gradient(circle at center, #0b2e1f, black)",
-    color: "white",
     height: "100vh",
+    background: "radial-gradient(circle, #0b2e1f, black)",
+    color: "white",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
   },
 
-  logoWrapper: {
-    position: "relative",
+  logo: {
+    width: 120,
+    marginBottom: 20,
+    animation: "float 4s ease-in-out infinite",
+    filter: "drop-shadow(0 0 25px rgba(0,255,150,0.6))",
+  },
+
+  header: {
+    textAlign: "center",
     marginBottom: 20,
   },
 
-  logo: {
-    width: 140,
-    animation: "float 4s ease-in-out infinite",
-    filter: "drop-shadow(0 0 12px rgba(0,255,150,0.6))",
-  },
-
   title: {
-    fontSize: "3rem",
-    letterSpacing: "0.4rem",
+    fontSize: "2.8rem",
+    letterSpacing: "0.35rem",
   },
 
   station: {
     opacity: 0.6,
-    marginBottom: 30,
+    fontSize: "0.9rem",
   },
 
   card: {
-    background: "#145a3b",
-    padding: "40px 80px",
-    borderRadius: 25,
+    background: "#111",
+    padding: "45px 90px",
+    borderRadius: 20,
+    textAlign: "center",
     marginBottom: 30,
-    animation: "pulse 2s infinite",
+    boxShadow: "0 0 60px rgba(0,255,150,0.25)",
   },
 
   label: {
-    opacity: 0.7,
-    textAlign: "center",
+    opacity: 0.6,
+    letterSpacing: 1,
+  },
+
+  number: {
+    fontSize: "4.5rem",
+    fontWeight: "bold",
+    color: "#00ff9c",
+    margin: "10px 0",
   },
 
   name: {
-    fontSize: "2.5rem",
-    textAlign: "center",
-    marginTop: 10,
+    fontSize: "1.5rem",
+    opacity: 0.8,
   },
 
   queue: {
@@ -178,8 +204,7 @@ const styles: any = {
   },
 
   queueItem: {
-    margin: 5,
-    fontSize: "1.2rem",
+    fontSize: "1.3rem",
+    margin: 6,
   },
 };
-

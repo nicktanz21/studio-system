@@ -1,116 +1,216 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
-const stations = [
-  { key: "toga", label: "TOGA" },
-  { key: "casual", label: "CASUAL" },
-  { key: "family", label: "FAMILY" },
-  { key: "alampay", label: "ALAMPAY" }
-];
-
-const fieldMap: any = {
-  toga: { ready: "toga_ready", done: "toga_done" },
-  casual: { ready: "casual_ready", done: "casual_done" },
-  family: { ready: "family_ready", done: "family_done" },
-  alampay: { ready: "alampay_ready", done: "alampay_done" }
+type Order = {
+  id: string;
+  name: string;
+  package: string;
+  slot_time: string;
+  payment_status: string;
 };
 
 export default function Dashboard() {
-  const [data, setData] = useState<any>({});
+  const [orders, setOrders] = useState<Order[]>([]);
 
-  const load = async () => {
-    const res = await fetch("/api/orders");
-    const json = await res.json();
-    const orders = json.data || [];
+  const today = new Date().toISOString().split("T")[0];
 
-    const result: any = {};
+  /* ================= FETCH ================= */
+  const fetchData = async () => {
+    const { data } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("booking_date", today);
 
-    stations.forEach((s) => {
-      const f = fieldMap[s.key];
-
-      const queue = orders
-        .filter((o: any) => o[f.ready] && !o[f.done])
-        .sort((a: any, b: any) => a.id.localeCompare(b.id));
-
-      result[s.key] = {
-        current: queue[0] || null,
-        next: queue[1] || null
-      };
-    });
-
-    setData(result);
+    if (data) setOrders(data);
   };
 
   useEffect(() => {
-    load();
-    const i = setInterval(load, 2000);
-    return () => clearInterval(i);
+    fetchData();
   }, []);
 
+  /* ================= METRICS ================= */
+  const total = orders.length;
+  const paid = orders.filter((o) => o.payment_status === "paid").length;
+  const pending = total - paid;
+
+  const revenue = orders
+    .filter((o) => o.payment_status === "paid")
+    .reduce((sum, o) => sum + Number(o.package || 0), 0);
+
+  const conversion = total ? ((paid / total) * 100).toFixed(1) : 0;
+
+  /* ================= SLOT ANALYTICS ================= */
+  const slotMap: any = {};
+
+  orders.forEach((o) => {
+    if (!slotMap[o.slot_time]) slotMap[o.slot_time] = 0;
+    slotMap[o.slot_time]++;
+  });
+
+  const slotStats = Object.entries(slotMap);
+
+  /* ================= PACKAGE ANALYTICS ================= */
+  const packageMap: any = {};
+
+  orders.forEach((o) => {
+    if (!packageMap[o.package]) packageMap[o.package] = 0;
+    packageMap[o.package]++;
+  });
+
+  const packageStats = Object.entries(packageMap);
+
+  /* ================= EXPORT ================= */
+  const exportCSV = () => {
+    const headers = [
+      "Name",
+      "Package",
+      "Slot",
+      "Payment",
+    ];
+
+    const rows = orders.map((o) => [
+      o.name,
+      o.package,
+      o.slot_time,
+      o.payment_status,
+    ]);
+
+    let csv =
+      "data:text/csv;charset=utf-8," +
+      [headers, ...rows].map((r) => r.join(",")).join("\n");
+
+    const link = document.createElement("a");
+    link.href = encodeURI(csv);
+    link.download = `dashboard_${today}.csv`;
+    link.click();
+  };
+
   return (
-    <div
-      style={{
-        height: "100vh",
-        width: "100vw",
-        background: "#000",
-        color: "white",
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gridTemplateRows: "1fr 1fr",
-        gap: 20,
-        padding: 20,
-        fontFamily: "Segoe UI"
-      }}
-    >
-      {stations.map((s) => {
-        const stationData = data[s.key] || {};
-        const current = stationData.current;
-        const next = stationData.next;
+    <div style={styles.container}>
+      <h1 style={styles.title}>📊 STREAMS STUDIO DASHBOARD</h1>
 
-        return (
-          <div
-            key={s.key}
-            style={{
-              background: "#111",
-              borderRadius: 20,
-              padding: 30,
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              alignItems: "center",
-              boxShadow: "0 0 30px rgba(0,255,150,0.1)"
-            }}
-          >
-            {/* TITLE */}
-            <h2 style={{ marginBottom: 20 }}>
-              {s.label} STATION
-            </h2>
+      {/* METRICS */}
+      <div style={styles.grid}>
+        <Card label="Total Clients" value={total} />
+        <Card label="Paid" value={paid} />
+        <Card label="Pending" value={pending} />
+        <Card label="Revenue" value={`₱${revenue}`} />
+        <Card label="Conversion" value={`${conversion}%`} />
+      </div>
 
-            {/* NOW SERVING */}
-            <div style={{ textAlign: "center" }}>
-              <p style={{ opacity: 0.6 }}>NOW SERVING</p>
-              <h1
+      {/* SLOT ANALYTICS */}
+      <h2 style={styles.section}>⏰ Clients per Time Slot</h2>
+      <div style={styles.analytics}>
+        {slotStats.map(([slot, count]: any) => (
+          <div key={slot} style={styles.barRow}>
+            <span style={{ width: 150 }}>{slot}</span>
+            <div style={styles.barContainer}>
+              <div
                 style={{
-                  fontSize: 36,
-                  color: "#00ff9c",
-                  textAlign: "center"
+                  ...styles.bar,
+                  width: `${count * 20}px`,
                 }}
-              >
-                {current?.name || "---"}
-              </h1>
+              />
             </div>
-
-            {/* NEXT */}
-            <div style={{ marginTop: 20, textAlign: "center" }}>
-              <p style={{ opacity: 0.5 }}>NEXT</p>
-              <h3>
-                {next?.name || "---"}
-              </h3>
-            </div>
+            <span>{count}</span>
           </div>
-        );
-      })}
+        ))}
+      </div>
+
+      {/* PACKAGE ANALYTICS */}
+      <h2 style={styles.section}>📦 Package Distribution</h2>
+      <div style={styles.analytics}>
+        {packageStats.map(([pkg, count]: any) => (
+          <div key={pkg} style={styles.barRow}>
+            <span style={{ width: 150 }}>₱{pkg}</span>
+            <div style={styles.barContainer}>
+              <div
+                style={{
+                  ...styles.bar,
+                  width: `${count * 30}px`,
+                }}
+              />
+            </div>
+            <span>{count}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* EXPORT */}
+      <button onClick={exportCSV} style={styles.export}>
+        EXPORT EXCEL
+      </button>
     </div>
   );
 }
+
+/* ================= UI COMPONENT ================= */
+const Card = ({ label, value }: any) => (
+  <div style={styles.card}>
+    <p>{label}</p>
+    <h2>{value}</h2>
+  </div>
+);
+
+/* ================= STYLES ================= */
+const styles: any = {
+  container: {
+    padding: 40,
+    minHeight: "100vh",
+    background: "radial-gradient(circle, #0b2e1f, black)",
+    color: "white",
+  },
+  title: {
+    textAlign: "center",
+    marginBottom: 30,
+  },
+  grid: {
+    display: "flex",
+    gap: 20,
+    flexWrap: "wrap",
+    marginBottom: 30,
+  },
+  card: {
+    padding: 20,
+    background: "#111",
+    borderRadius: 12,
+    minWidth: 150,
+    textAlign: "center",
+  },
+  section: {
+    marginTop: 30,
+    marginBottom: 10,
+  },
+  analytics: {
+    background: "#111",
+    padding: 20,
+    borderRadius: 12,
+  },
+  barRow: {
+    display: "flex",
+    alignItems: "center",
+    marginBottom: 10,
+    gap: 10,
+  },
+  barContainer: {
+    flex: 1,
+    background: "#222",
+    height: 10,
+    borderRadius: 5,
+  },
+  bar: {
+    height: 10,
+    background: "#00ff9c",
+    borderRadius: 5,
+  },
+  export: {
+    marginTop: 30,
+    padding: 12,
+    background: "#00ff9c",
+    border: "none",
+    borderRadius: 10,
+    fontWeight: "bold",
+  },
+};
