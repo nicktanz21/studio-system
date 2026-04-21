@@ -1,218 +1,200 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
-export default function DisplayPage() {
-  const { role } = useParams();
+type Order = {
+  id: string;
+  name: string;
+  status: "waiting" | "serving" | "done";
+  station?: string;
+  created_at?: string;
+};
 
-  const [orders, setOrders] = useState<any[]>([]);
-  const [currentName, setCurrentName] = useState("");
-  const [animate, setAnimate] = useState(false);
+export default function DisplayPage({
+  params,
+}: {
+  params: { role: string };
+}) {
+  const { role } = params;
 
-  const map: any = {
-    toga: { ready: "toga_ready", done: "toga_done" },
-    casual: { ready: "casual_ready", done: "casual_done" },
-    family: { ready: "family_ready", done: "family_done" },
-    alampay: { ready: "alampay_ready", done: "alampay_done" }
-  };
+  const [nowServing, setNowServing] = useState<Order | null>(null);
+  const [queue, setQueue] = useState<Order[]>([]);
+  const prevServingRef = useRef<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const f = map[role as string];
+  // Load audio once
+  useEffect(() => {
+    audioRef.current = new Audio("/alert.mp3");
+  }, []);
 
-  const playSound = () => {
-    const audio = new Audio("/alert.mp3");
-    audio.play().catch(() => {});
-  };
+  // Fetch data (adjust API to your backend)
+  const fetchOrders = async () => {
+    try {
+      const res = await fetch(`/api/orders?station=${role}`, {
+        cache: "no-store",
+      });
+      const data: Order[] = await res.json();
 
-  const load = async () => {
-    const res = await fetch("/api/orders");
-    const json = await res.json();
+      const serving = data.find((o) => o.status === "serving") || null;
+      const waiting = data.filter((o) => o.status === "waiting");
 
-    const filtered = (json.data || [])
-      .filter((o: any) => !o[f.done])
-      .sort((a: any, b: any) => a.id.localeCompare(b.id));
+      // Play sound if changed
+      if (serving && prevServingRef.current !== serving.id) {
+        prevServingRef.current = serving.id;
+        audioRef.current?.play().catch(() => {});
+      }
 
-    setOrders(filtered);
-
-    const current = filtered.find((o: any) => o[f.ready]);
-
-    if (current && current.name !== currentName) {
-      setCurrentName(current.name);
-      setAnimate(true);
-      playSound();
-      setTimeout(() => setAnimate(false), 700);
+      setNowServing(serving);
+      setQueue(waiting);
+    } catch (err) {
+      console.error("Fetch error:", err);
     }
   };
 
+  // Poll every 2s
   useEffect(() => {
-    load();
-    const i = setInterval(load, 2000);
-    return () => clearInterval(i);
-  }, []);
-
-  const current = orders.find((o) => o[f.ready]);
-  const nextList = orders.filter((o) => !o[f.ready]).slice(0, 4);
+    fetchOrders();
+    const interval = setInterval(fetchOrders, 2000);
+    return () => clearInterval(interval);
+  }, [role]);
 
   return (
-    <div style={styles.wrapper}>
-      
+    <div style={styles.container}>
       {/* BACKGROUND GLOW */}
-      <div style={styles.light} />
+      <div style={styles.bgGlow} />
 
-      {/* 🔝 HEADER (CENTERED) */}
+      {/* HEADER */}
       <div style={styles.header}>
-        <img src="/logo.png" style={styles.logo} />
-
-        <h1 style={styles.brand}>
-          STREAMS STUDIO
-        </h1>
-      </div>
-
-      {/* STATION */}
-      <div style={styles.station}>
-        {role?.toString().toUpperCase()} STATION
+        <img src="/LOGO.png" alt="logo" style={styles.logo} />
+        <h1 style={styles.title}>STREAMS STUDIO</h1>
+        <div style={styles.station}>TOGA STATION</div>
       </div>
 
       {/* NOW SERVING */}
-      <div
-        style={{
-          ...styles.card,
-          ...(animate ? styles.cardActive : {})
-        }}
-      >
+      <div style={styles.card}>
         <div style={styles.label}>NOW SERVING</div>
-
         <div style={styles.name}>
-          {current?.name || (
-            <span style={{ opacity: 0.4, letterSpacing: 10 }}>
-              • • •
-            </span>
-          )}
+          {nowServing?.name || "— — —"}
         </div>
       </div>
 
-      {/* NEXT */}
+      {/* UP NEXT */}
       <div style={styles.nextSection}>
-        <div style={styles.labelSmall}>UP NEXT</div>
-
-        {nextList.length === 0 ? (
-          <div style={{ opacity: 0.3 }}>Waiting for queue...</div>
-        ) : (
-          nextList.map((o, i) => (
-            <div key={o.id} style={styles.row}>
-              <span>#{(i + 1).toString().padStart(3, "0")}</span>
-              <span>{o.name}</span>
+        <div style={styles.nextLabel}>UP NEXT</div>
+        <div style={styles.queue}>
+          {queue.slice(0, 3).map((q, i) => (
+            <div key={q.id} style={styles.queueItem}>
+              {i + 1}. {q.name}
             </div>
-          ))
-        )}
+          ))}
+        </div>
       </div>
 
       {/* FOOTER */}
       <div style={styles.footer}>
-        Please prepare when your name is called
+        streams studio • premium experience
       </div>
     </div>
   );
 }
 
-const styles: any = {
-  wrapper: {
+const styles: Record<string, React.CSSProperties> = {
+  container: {
     height: "100vh",
+    width: "100vw",
     background: "#000",
-    color: "white",
+    color: "#fff",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    fontFamily: "Segoe UI",
-    textAlign: "center",
-    position: "relative",
-    overflow: "hidden"
+    fontFamily: "sans-serif",
+    overflow: "hidden",
   },
 
-  light: {
+  bgGlow: {
     position: "absolute",
-    width: "120%",
-    height: "120%",
-    background:
-      "radial-gradient(circle at center, rgba(34,197,94,0.25), transparent 60%)",
+    width: "600px",
+    height: "600px",
+    background: "radial-gradient(circle, rgba(0,255,150,0.2), transparent)",
     filter: "blur(120px)",
-    animation: "pulse 6s infinite"
+    zIndex: 0,
   },
 
   header: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: "5vh"
+    textAlign: "center",
+    marginBottom: 30,
+    zIndex: 1,
   },
 
   logo: {
-    height: "14vh",   // 🔥 BIG + SCALES
-    maxHeight: 160,
-    objectFit: "contain",
-    marginBottom: "1.5vh"
+    width: 90,
+    marginBottom: 10,
+    opacity: 0.9,
   },
 
-  brand: {
-    fontSize: "5.5vh",
-    letterSpacing: "0.8vh",
-    fontWeight: 300
+  title: {
+    fontSize: "3rem",
+    letterSpacing: "0.4rem",
+    fontWeight: 300,
+    margin: 0,
   },
 
   station: {
-    marginBottom: "2vh",
     opacity: 0.6,
-    letterSpacing: "0.3vh"
+    marginTop: 10,
+    letterSpacing: "0.2rem",
   },
 
   card: {
-    padding: "60px 140px",
+    background: "#0f5132",
+    padding: "50px 80px",
     borderRadius: 30,
-    background: "rgba(6,95,70,0.9)",
-    boxShadow: "0 0 30px rgba(34,197,94,0.5)",
-    transition: "all 0.3s ease"
-  },
-
-  cardActive: {
-    boxShadow: "0 0 100px #22c55e",
-    transform: "scale(1.05)"
+    textAlign: "center",
+    boxShadow: "0 0 60px rgba(0,255,150,0.3)",
+    zIndex: 1,
+    minWidth: 400,
   },
 
   label: {
-    opacity: 0.6
+    opacity: 0.7,
+    marginBottom: 15,
+    letterSpacing: "0.2rem",
   },
 
   name: {
-    fontSize: "7vh",
-    fontWeight: "bold",
-    marginTop: 10
+    fontSize: "3rem",
+    fontWeight: 600,
+    letterSpacing: "0.1rem",
   },
 
   nextSection: {
-    marginTop: "5vh",
-    width: "50%"
+    marginTop: 40,
+    textAlign: "center",
+    zIndex: 1,
   },
 
-  labelSmall: {
-    opacity: 0.5,
-    marginBottom: 10
+  nextLabel: {
+    opacity: 0.6,
+    marginBottom: 10,
+    letterSpacing: "0.2rem",
   },
 
-  row: {
+  queue: {
     display: "flex",
-    justifyContent: "space-between",
-    padding: "12px 18px",
-    background: "rgba(255,255,255,0.05)",
-    borderRadius: 10,
-    marginTop: 8,
-    fontSize: "2.2vh"
+    flexDirection: "column",
+    gap: 6,
+  },
+
+  queueItem: {
+    opacity: 0.85,
   },
 
   footer: {
     position: "absolute",
     bottom: 20,
-    opacity: 0.3
-  }
+    opacity: 0.3,
+    fontSize: 12,
+    letterSpacing: "0.2rem",
+  },
 };
