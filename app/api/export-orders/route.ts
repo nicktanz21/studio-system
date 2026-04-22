@@ -1,57 +1,48 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const date = url.searchParams.get("date"); // optional: ?date=YYYY-MM-DD
+export async function POST(req: Request) {
+  const body = await req.json();
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  let query = supabase
+  const {
+    name,
+    email,
+    phone,
+    package: pkg,
+    queue_number,
+    slot_time,
+    booking_date,
+  } = body;
+
+  const { data, error } = await supabase
     .from("orders")
-    .select("*")
-    .order("created_at", { ascending: true });
-
-  if (date) {
-    query = query.eq("booking_date", date);
-  }
-
-  const { data, error } = await query;
+    .insert({
+      name,
+      email,
+      phone,
+      package: pkg,
+      queue_number,
+      step: "intake",
+      status: "waiting",
+      slot_time,
+      booking_date,
+      payment_status: "pending",
+      selected: false,
+      edited: false,
+      printed: false,
+      emailed: false,
+    })
+    .select()
+    .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message });
   }
 
-  if (!data || data.length === 0) {
-    return new NextResponse("No data", {
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-
-  // --- CSV ---
-  const headers = Object.keys(data[0]);
-  const headerLine = headers.join(",");
-
-  const rows = data.map((row) =>
-    headers
-      .map((h) => {
-        const v = row[h as keyof typeof row];
-        const s = String(v ?? "");
-        // escape quotes + wrap in quotes
-        return `"${s.replace(/"/g, '""')}"`;
-      })
-      .join(",")
-  );
-
-  const csv = [headerLine, ...rows].join("\n");
-
-  return new NextResponse(csv, {
-    headers: {
-      "Content-Type": "text/csv",
-      "Content-Disposition": `attachment; filename="orders${date ? `-${date}` : ""}.csv"`,
-    },
-  });
+  return NextResponse.json(data);
 }
