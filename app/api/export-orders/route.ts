@@ -4,11 +4,6 @@ import { createClient } from "@supabase/supabase-js";
 export async function POST(req: Request) {
   const body = await req.json();
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-
   const {
     name,
     email,
@@ -19,6 +14,27 @@ export async function POST(req: Request) {
     booking_date,
   } = body;
 
+  if (!name) {
+    return NextResponse.json({ error: "Missing name" });
+  }
+
+  // ✅ CREATE SERVER CLIENT (IMPORTANT)
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  // 🔢 get next queue (per day)
+  const { data: last } = await supabase
+    .from("orders")
+    .select("queue_number")
+    .eq("booking_date", booking_date)
+    .order("queue_number", { ascending: false })
+    .limit(1);
+
+  const nextNumber = (last?.[0]?.queue_number || 0) + 1;
+
+  // ✅ INSERT (BYPASS RLS)
   const { data, error } = await supabase
     .from("orders")
     .insert({
@@ -26,7 +42,7 @@ export async function POST(req: Request) {
       email,
       phone,
       package: pkg,
-      queue_number,
+      queue_number: queue_number || nextNumber,
       step: "intake",
       status: "waiting",
       slot_time,
