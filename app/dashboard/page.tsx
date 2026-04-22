@@ -12,9 +12,42 @@ type Order = {
 };
 
 export default function Dashboard() {
+
+  const [allowed, setAllowed] = useState(false);
+
   const [orders, setOrders] = useState<Order[]>([]);
 
   const today = new Date().toISOString().split("T")[0];
+
+  useEffect(() => {
+  const checkAccess = async () => {
+    const { data: userData } = await supabase.auth.getUser();
+
+    // ❌ NOT LOGGED IN
+    if (!userData.user) {
+      window.location.href = "/login";
+      return;
+    }
+
+    // 🔍 GET ROLE
+    const { data } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userData.user.id)
+      .single();
+
+    // ❌ NOT ADMIN
+    if (data?.role !== "admin") {
+      window.location.href = "/admin";
+      return;
+    }
+
+    // ✅ ADMIN → ALLOW PAGE
+    setAllowed(true);
+  };
+
+  checkAccess();
+}, []);
 
   /* ================= FETCH ================= */
   const fetchData = async () => {
@@ -86,6 +119,8 @@ export default function Dashboard() {
     link.download = `dashboard_${today}.csv`;
     link.click();
   };
+  
+if (!allowed) return null;
 
   return (
     <div style={styles.container}>

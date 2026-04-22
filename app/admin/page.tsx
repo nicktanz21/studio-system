@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Order = {
@@ -14,178 +15,223 @@ type Order = {
   edited: boolean;
   printed: boolean;
   emailed: boolean;
-  payment_status: string; // ✅ FIXED
+  payment_status: string;
 };
 
 export default function AdminPage() {
+  const router = useRouter();
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
-  const formatQueue = (num?: number) =>
-    num !== undefined ? "#" + String(num).padStart(3, "0") : "---";
+  const [checkingAccess, setCheckingAccess] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
+  const handleLogout = async () => {
+  const { error } = await supabase.auth.signOut();
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  router.replace("/login");
+};
 
-  /* ================= FETCH ================= */
+  // 🔐 AUTH
+  useEffect(() => {
+  const checkAccess = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    console.log("SESSION:", session);
+    console.log("SESSION USER ID:", session?.user?.id);
+    console.log("SESSION USER EMAIL:", session?.user?.email);
+    if (!session) {
+      window.location.href = "/login";
+      return;
+    }
+    const user = session.user;
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("id, email, role")
+      .eq("id", user.id)
+      .maybeSingle();
+    console.log("PROFILE:", profile);
+    console.log("PROFILE ERROR:", error);
+    const { data: profileByEmail } = await supabase
+      .from("profiles")
+      .select("id, email, role")
+      .eq("email", user.email)
+      .maybeSingle();
+    console.log("PROFILE BY EMAIL:", profileByEmail);
+    if (!profile || !["admin", "staff"].includes(profile.role)) {
+      window.location.href = "/login";
+      return;
+    }
+    console.log("ACCESS GRANTED");
+    setAuthorized(true);
+setCheckingAccess(false);
+  };
+  checkAccess();
+}, []);
+
+  
+
+  // 🔄 FETCH
   const fetchOrders = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("orders")
       .select("*")
       .order("created_at", { ascending: true });
 
+    if (error) {
+      console.error("Fetch orders failed:", error);
+      return;
+    }
+
     if (data) setOrders(data);
   };
 
-  /* ================= ADD ================= */
-  const addCustomer = async () => {
-    if (!name) return alert("Enter name");
-
-    const { data } = await supabase
-      .from("orders")
-      .select("queue_number")
-      .order("queue_number", { ascending: false })
-      .limit(1);
-
-    const nextNumber = (data?.[0]?.queue_number || 0) + 1;
-
-    await supabase.from("orders").insert({
-      name,
-      email,
-      queue_number: nextNumber,
-      step: "intake",
-      status: "waiting",
-      payment_status: "pending", // ✅ IMPORTANT
-      selected: false,
-      edited: false,
-      printed: false,
-      emailed: false,
-    });
-
-    setName("");
-    setEmail("");
-  };
-
-  /* ================= FLAGS ================= */
-  const updateFlag = async (id: string, field: string) => {
-    await supabase
-      .from("orders")
-      .update({ [field]: true })
-      .eq("id", id);
-  };
-
-  /* ================= PAYMENT ================= */
-  const markPaid = async (id: string) => {
-    await supabase
-      .from("orders")
-      .update({ payment_status: "paid" })
-      .eq("id", id);
-  };
-
-  /* ================= NEXT ================= */
-  const serveNext = async () => {
-    const current = orders.find((o) => o.status === "serving");
-
-    const flow: any = {
-      intake: "toga",
-      toga: "alampay",
-      alampay: "family",
-      family: "casual",
-      casual: "select",
-    };
-
-    if (current) {
-      const nextStep = flow[current.step];
-
-      await supabase
-        .from("orders")
-        .update({ step: nextStep, status: "waiting" })
-        .eq("id", current.id);
-    }
-
-    const next = orders.find((o) => o.status === "waiting");
-
-    if (next) {
-      await supabase
-        .from("orders")
-        .update({ status: "serving" })
-        .eq("id", next.id);
-    }
-  };
-
-  /* ================= AUTO WORKFLOW ================= */
-  const processWorkflow = async (list: Order[]) => {
-    for (const o of list) {
-      if (o.step === "select" && o.selected) {
-        await supabase
-          .from("orders")
-          .update({ step: "edit" })
-          .eq("id", o.id);
-      }
-
-      if (o.step === "edit" && o.edited) {
-        await supabase
-          .from("orders")
-          .update({ step: "print" })
-          .eq("id", o.id);
-      }
-
-      if (o.step === "print" && o.printed && !o.emailed) {
-        await fetch("/api/send-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: o.email,
-            name: o.name,
-            queue: o.queue_number,
-          }),
-        });
-
-        await supabase
-          .from("orders")
-          .update({
-            step: "done",
-            status: "done",
-            emailed: true,
-          })
-          .eq("id", o.id);
-      }
-    }
-  };
-
-  /* ================= REALTIME ================= */
+  // 🔄 LOAD ONLY AFTER AUTHORIZED
   useEffect(() => {
+    if (!authorized) return;
     fetchOrders();
+  }, [authorized]);
+
+  // 🔥 REALTIME ONLY AFTER AUTHORIZED
+  useEffect(() => {
+    if (!authorized) return;
 
     const channel = supabase
       .channel("orders-live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
-        async () => {
-          const { data } = await supabase
-            .from("orders")
-            .select("*")
-            .order("created_at", { ascending: true });
-
-          if (data) {
-            setOrders(data);
-            processWorkflow(data);
-          }
-        }
+        () => fetchOrders()
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [authorized]);
 
-  /* ================= UI ================= */
+  // ➕ ADD CUSTOMER
+  const addCustomer = async () => {
+    if (!name.trim()) {
+      alert("Name is required");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/add-order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          email,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      setName("");
+      setEmail("");
+    } catch (err) {
+      alert("Something went wrong. Try again.");
+    }
+  };
+
+  // 🔧 UPDATE FLAGS
+  const updateFlag = async (id: string, field: string) => {
+    try {
+      const res = await fetch("/api/update-flag", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id, field }),
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        alert(data.error);
+      }
+    } catch (err) {
+      alert("Update failed");
+    }
+  };
+
+  // 💰 MARK PAID
+  const markPaid = async (id: string) => {
+    await fetch("/api/mark-paid", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id }),
+    });
+  };
+
+  // ▶️ NEXT CUSTOMER
+  const serveNext = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    const token = session?.access_token;
+
+    try {
+      await fetch("/api/serve-next", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (err) {
+      alert("Failed to move to next customer");
+    }
+  };
+
+  if (checkingAccess) {
+    return (
+      <div style={styles.container}>
+        <p>Checking access...</p>
+      </div>
+    );
+    const handleLogout = async () => {
+  const { error } = await supabase.auth.signOut();
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  router.replace("/login");
+};
+  }
+
+  if (!authorized) {
+    return null;
+  }
+
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>STREAMS STUDIO</h1>
-
-      {/* CONTROL */}
-      <div style={styles.control}>
+  <div style={styles.container}>
+    <div style={styles.topBar}>
+      <div>
+        <h1 style={styles.title}>STREAMS STUDIO</h1>
+        <p style={styles.subtitle}>Admin Control Panel</p>
+      </div>
+      <button onClick={handleLogout} style={styles.logoutBtn}>
+        LOGOUT
+      </button>
+    </div>
+    <div style={styles.card}>
         <input
           placeholder="Customer Name"
           value={name}
@@ -209,153 +255,111 @@ export default function AdminPage() {
         NEXT CUSTOMER →
       </button>
 
-      {/* LIST */}
-      <div style={{ marginTop: 30 }}>
-        {orders.map((o) => (
-          <div
-            key={o.id}
+      {orders.map((o) => (
+        <div
+          key={o.id}
+          style={{
+            ...styles.orderCard,
+            background:
+              o.status === "serving"
+                ? "#145a3b"
+                : o.status === "waiting"
+                ? "#1a1a1a"
+                : "#333",
+          }}
+        >
+          <div style={styles.header}>
+            <strong>#{String(o.queue_number).padStart(3, "0")}</strong> — {o.name}
+          </div>
+
+          <div style={styles.meta}>
+            {o.step} → {o.status}
+          </div>
+
+          <button
+            onClick={() => markPaid(o.id)}
             style={{
-              ...styles.card,
-              background:
-                o.status === "serving"
-                  ? "#145a3b"
-                  : o.payment_status === "paid"
-                  ? "#1a3d2f"
-                  : "#222",
+              ...styles.payBtn,
+              background: o.payment_status === "paid" ? "#00ff9c" : "#444",
+              color: o.payment_status === "paid" ? "black" : "white",
             }}
           >
-            <div style={styles.row}>
-              <div>
-                <div style={styles.queue}>
-                  {formatQueue(o.queue_number)}
-                </div>
-                <div style={styles.name}>{o.name}</div>
-              </div>
-
-              <div style={styles.status}>
-                {o.step.toUpperCase()} • {o.status.toUpperCase()}
-              </div>
-            </div>
-
-            {/* FLAGS */}
-            <div style={styles.badges}>
-              <span style={badge(o.selected)}>SELECTED</span>
-              <span style={badge(o.edited)}>EDITED</span>
-              <span style={badge(o.printed)}>PRINTED</span>
-              <span style={badge(o.emailed)}>EMAILED</span>
-            </div>
-
-            {/* ACTIONS */}
-            <div style={styles.actions}>
-              <button onClick={() => updateFlag(o.id, "selected")}>
-                SELECT
-              </button>
-
-              <button onClick={() => updateFlag(o.id, "edited")}>
-                EDIT
-              </button>
-
-              <button onClick={() => updateFlag(o.id, "printed")}>
-                PRINT
-              </button>
-
-              <button
-                onClick={() => markPaid(o.id)}
-                style={{
-                  background:
-                    o.payment_status === "paid" ? "#00ff9c" : "#444",
-                  color:
-                    o.payment_status === "paid" ? "black" : "white",
-                }}
-              >
-                {o.payment_status === "paid" ? "PAID" : "MARK PAID"}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+            {o.payment_status === "paid" ? "PAID" : "MARK PAID"}
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
 
-/* ================= STYLES ================= */
-
 const styles: any = {
   container: {
-    padding: 40,
     minHeight: "100vh",
+    padding: 40,
     background: "radial-gradient(circle, #0b2e1f, black)",
     color: "white",
   },
+
   title: {
-    textAlign: "center",
-    marginBottom: 20,
-    letterSpacing: 3,
+    fontSize: "2rem",
+    letterSpacing: "0.2rem",
   },
-  control: {
-    display: "flex",
-    gap: 10,
+
+  subtitle: {
+    opacity: 0.6,
     marginBottom: 20,
-    justifyContent: "center",
   },
+  
+card: {
+  display: "flex",
+  gap: 10,
+  marginBottom: 20,
+},
+
   input: {
     padding: 10,
     borderRadius: 8,
     border: "none",
-    width: 200,
   },
+
   addBtn: {
     padding: "10px 20px",
     background: "#00ff9c",
     border: "none",
     borderRadius: 8,
-    fontWeight: "bold",
+    cursor: "pointer",
   },
+
   nextBtn: {
     width: "100%",
     padding: 15,
     background: "#00ff9c",
     border: "none",
     borderRadius: 10,
-    fontSize: 16,
-    fontWeight: "bold",
+    marginBottom: 20,
+    cursor: "pointer",
   },
-  card: {
+
+  orderCard: {
     padding: 15,
-    marginBottom: 15,
-    borderRadius: 12,
+    borderRadius: 10,
+    marginBottom: 10,
   },
-  row: {
-    display: "flex",
-    justifyContent: "space-between",
-  },
-  queue: {
-    fontSize: 20,
+
+  header: {
     fontWeight: "bold",
-    color: "#00ff9c",
   },
-  name: {
-    fontSize: 16,
-  },
-  status: {
+
+  meta: {
     opacity: 0.7,
+    marginTop: 5,
   },
-  badges: {
+
+  payBtn: {
     marginTop: 10,
-    display: "flex",
-    gap: 10,
-  },
-  actions: {
-    marginTop: 10,
-    display: "flex",
-    gap: 10,
+    padding: "6px 12px",
+    border: "none",
+    borderRadius: 6,
+    cursor: "pointer",
   },
 };
-
-const badge = (active: boolean) => ({
-  padding: "5px 10px",
-  borderRadius: 6,
-  background: active ? "#00ff9c" : "#444",
-  color: active ? "black" : "#aaa",
-  fontSize: 12,
-});
