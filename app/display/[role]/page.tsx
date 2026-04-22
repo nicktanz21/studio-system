@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+const [orders, setOrders] = useState<any[]>([]);
 
 type Order = {
   id: string;
@@ -37,49 +38,39 @@ export default function DisplayPage() {
 
   // 🔥 FETCH
   const fetchOrders = async () => {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .order("created_at", { ascending: true });
+  const today = new Date().toISOString().split("T")[0];
 
-    if (error) {
-      console.error(error);
-      return;
-    }
+  const { data, error } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("booking_date", today)
+    .order("queue_number", { ascending: true });
 
-    const serving = data.find((o) => o.status === "serving") || null;
-    const waiting = data.filter((o) => o.status === "waiting");
+  if (error) {
+    console.error(error);
+    return;
+  }
 
-    // 🔊 announce only when changed
-    if (serving && prevId.current !== serving.id) {
-      prevId.current = serving.id;
+  if (data) setOrders(data);
 
-      speak(
-        `Now serving number ${serving.queue_number} at ${role} station`
-      );
-    }
 
-    setNowServing(serving);
-    setQueue(waiting);
+    const serving = data?.find((o) => o.status === "serving");
+const waiting = data?.filter((o) => o.status === "waiting");
+
+setNowServing(serving);
+setQueue(waiting);
   };
 
   // 🔁 REALTIME
   useEffect(() => {
+  fetchOrders();
+
+  const interval = setInterval(() => {
     fetchOrders();
+  }, 3000); // every 3 seconds
 
-    const channel = supabase
-      .channel("display-" + role)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        fetchOrders
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [role]);
+  return () => clearInterval(interval);
+}, []);
 
   return (
     <div style={styles.container}>
