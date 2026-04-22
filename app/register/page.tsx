@@ -9,12 +9,16 @@ export default function RegisterPage() {
   const [phone, setPhone] = useState("");
   const [pkg, setPkg] = useState("");
   const [slot, setSlot] = useState("");
+  
+  const [selectedDate, setSelectedDate] = useState(
+  new Date().toISOString().split("T")[0]
+);
 
   const [qr, setQr] = useState<string | null>(null);
   const [queue, setQueue] = useState<number | null>(null);
   const [fullSlots, setFullSlots] = useState<string[]>([]);
 
-  const today = new Date().toISOString().split("T")[0];
+
 
   // 🔥 SLOT GENERATOR (1 HOUR)
   const generateSlots = () => {
@@ -49,7 +53,7 @@ export default function RegisterPage() {
         .from("orders")
         .select("*", { count: "exact", head: true })
         .eq("slot_time", s)
-        .eq("booking_date", today);
+        .eq("booking_date", selectedDate);
 
       if ((count || 0) >= 5) result.push(s);
     }
@@ -58,8 +62,8 @@ export default function RegisterPage() {
   };
 
   useEffect(() => {
-    loadFullSlots();
-  }, []);
+  loadFullSlots();
+}, [selectedDate]);
 
   // 🔥 REGISTER
   const register = async () => {
@@ -72,10 +76,9 @@ export default function RegisterPage() {
     }
 
     const { data: last } = await supabase
-      .from("orders")
-      .select("queue_number")
-      .eq("booking_date", today)
-      .order("queue_number", { ascending: false })
+  .from("orders")
+  .select("queue_number")
+  .eq("booking_date", selectedDate)
       .limit(1);
 
     const nextQueue = (last?.[0]?.queue_number || 0) + 1;
@@ -91,7 +94,7 @@ export default function RegisterPage() {
         step: "intake",
         status: "waiting",
         slot_time: slot,
-        booking_date: today,
+        booking_date: selectedDate,
         payment_status: "pending",
         selected: false,
         edited: false,
@@ -128,6 +131,13 @@ export default function RegisterPage() {
             <option value="650">Package 650</option>
             <option value="1250">Package 1250</option>
           </select>
+          <input
+  type="date"
+  value={selectedDate}
+  onChange={(e) => setSelectedDate(e.target.value)}
+  min={new Date().toISOString().split("T")[0]}
+  style={styles.input}
+/>
 
           <select onChange={(e) => setSlot(e.target.value)} style={styles.input}>
             <option value="">Select Time Slot</option>

@@ -226,6 +226,21 @@ setCheckingAccess(false);
       <div>
         <h1 style={styles.title}>STREAMS STUDIO</h1>
         <p style={styles.subtitle}>Admin Control Panel</p>
+        <div style={{ marginBottom: 20 }}>
+  <a href="/api/export-orders" target="_blank">
+    <button>DOWNLOAD ALL (CSV)</button>
+  </a>
+
+  <a
+    href={`/api/export-orders?date=${new Date()
+      .toISOString()
+      .split("T")[0]}`}
+    target="_blank"
+    style={{ marginLeft: 10 }}
+  >
+    <button>DOWNLOAD TODAY</button>
+  </a>
+</div>
       </div>
       <button onClick={handleLogout} style={styles.logoutBtn}>
         LOGOUT
@@ -309,7 +324,6 @@ const styles: any = {
     opacity: 0.6,
     marginBottom: 20,
   },
-  
 card: {
   display: "flex",
   gap: 10,
