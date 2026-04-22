@@ -9,18 +9,16 @@ export default function RegisterPage() {
   const [phone, setPhone] = useState("");
   const [pkg, setPkg] = useState("");
   const [slot, setSlot] = useState("");
-  
+
   const [selectedDate, setSelectedDate] = useState(
-  new Date().toISOString().split("T")[0]
-);
+    new Date().toISOString().split("T")[0]
+  );
 
   const [qr, setQr] = useState<string | null>(null);
   const [queue, setQueue] = useState<number | null>(null);
   const [fullSlots, setFullSlots] = useState<string[]>([]);
 
-
-
-  // 🔥 SLOT GENERATOR (1 HOUR)
+  // 🔥 SLOT GENERATOR
   const generateSlots = () => {
     const slots: string[] = [];
     let start = 8 * 60 + 30;
@@ -62,10 +60,10 @@ export default function RegisterPage() {
   };
 
   useEffect(() => {
-  loadFullSlots();
-}, [selectedDate]);
+    loadFullSlots();
+  }, [selectedDate]);
 
-  // 🔥 REGISTER
+  // 🔥 REGISTER (FIXED — USES API)
   const register = async () => {
     if (!name || !email || !phone || !pkg || !slot) {
       return alert("Please complete all fields");
@@ -75,37 +73,40 @@ export default function RegisterPage() {
       return alert("This slot is FULL");
     }
 
+    // 👉 GET NEXT QUEUE
     const { data: last } = await supabase
-  .from("orders")
-  .select("queue_number")
-  .eq("booking_date", selectedDate)
+      .from("orders")
+      .select("queue_number")
+      .eq("booking_date", selectedDate)
+      .order("queue_number", { ascending: false })
       .limit(1);
 
     const nextQueue = (last?.[0]?.queue_number || 0) + 1;
 
-    const { data, error } = await supabase
-      .from("orders")
-      .insert({
+    // ✅ CALL API INSTEAD OF DIRECT INSERT
+    const res = await fetch("/api/add-order", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
         name,
         email,
         phone,
         package: pkg,
         queue_number: nextQueue,
-        step: "intake",
-        status: "waiting",
         slot_time: slot,
         booking_date: selectedDate,
-        payment_status: "pending",
-        selected: false,
-        edited: false,
-        printed: false,
-        emailed: false,
-      })
-      .select()
-      .single();
+      }),
+    });
 
-    if (error) return alert(error.message);
+    const data = await res.json();
 
+    if (data.error) {
+      return alert(data.error);
+    }
+
+    // ✅ SUCCESS
     setQr(data.id);
     setQueue(nextQueue);
 
@@ -121,9 +122,21 @@ export default function RegisterPage() {
 
       {!qr && (
         <div style={styles.card}>
-          <input placeholder="Full Name" onChange={(e) => setName(e.target.value)} style={styles.input} />
-          <input placeholder="Email" onChange={(e) => setEmail(e.target.value)} style={styles.input} />
-          <input placeholder="Phone" onChange={(e) => setPhone(e.target.value)} style={styles.input} />
+          <input
+            placeholder="Full Name"
+            onChange={(e) => setName(e.target.value)}
+            style={styles.input}
+          />
+          <input
+            placeholder="Email"
+            onChange={(e) => setEmail(e.target.value)}
+            style={styles.input}
+          />
+          <input
+            placeholder="Phone"
+            onChange={(e) => setPhone(e.target.value)}
+            style={styles.input}
+          />
 
           <select onChange={(e) => setPkg(e.target.value)} style={styles.input}>
             <option value="">Select Package</option>
@@ -131,13 +144,14 @@ export default function RegisterPage() {
             <option value="650">Package 650</option>
             <option value="1250">Package 1250</option>
           </select>
+
           <input
-  type="date"
-  value={selectedDate}
-  onChange={(e) => setSelectedDate(e.target.value)}
-  min={new Date().toISOString().split("T")[0]}
-  style={styles.input}
-/>
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            min={new Date().toISOString().split("T")[0]}
+            style={styles.input}
+          />
 
           <select onChange={(e) => setSlot(e.target.value)} style={styles.input}>
             <option value="">Select Time Slot</option>
@@ -166,7 +180,10 @@ export default function RegisterPage() {
 
           <p>⚠️ Proceed to payment counter</p>
 
-          <button onClick={() => window.location.reload()} style={styles.button}>
+          <button
+            onClick={() => window.location.reload()}
+            style={styles.button}
+          >
             New Registration
           </button>
         </div>
