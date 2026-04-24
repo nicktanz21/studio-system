@@ -6,23 +6,22 @@ export default function ProductionPage() {
   const [orders, setOrders] = useState<any[]>([]);
 
   const fetchOrders = async () => {
-    const res = await fetch("/api/orders");
-    const data = await res.json();
+    try {
+      const res = await fetch("/api/orders");
+      const data = await res.json();
 
-    if (!Array.isArray(data)) return;
-
-    setOrders(data);
+      if (!Array.isArray(data)) return;
+      setOrders(data);
+    } catch (err) {
+      console.error("FETCH FAILED:", err);
+    }
   };
 
   useEffect(() => {
-  fetchOrders();
-
-  const interval = setInterval(() => {
     fetchOrders();
-  }, 3000); // refresh every 3 seconds
-
-  return () => clearInterval(interval);
-}, []);
+    const interval = setInterval(fetchOrders, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   // 🔥 STAGE LOGIC
   const getStage = (o: any) => {
@@ -41,12 +40,13 @@ export default function ProductionPage() {
 
   // 🔁 MOVE TO NEXT STEP
   const nextStep = async (o: any) => {
-    let field = "";
+  let field = "";
 
-    if (!o.selected) field = "selected";
-    else if (!o.edited) field = "edited";
-    else if (!o.printed) field = "printed";
+  if (!o.selected) field = "selected";
+  else if (!o.edited) field = "edited";
+  else if (!o.printed) field = "printed";
 
+  try {
     await fetch("/api/update-flag", {
       method: "POST",
       headers: {
@@ -54,88 +54,109 @@ export default function ProductionPage() {
       },
       body: JSON.stringify({ id: o.id, field }),
     });
-
-    fetchOrders();
-  };
-
-  // 💰 MARK PAID → FORCE INTO EDIT
- const markPaid = async (o: any) => {
-  try {
-    const res = await fetch("/api/mark-paid", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ id: o.id }),
-    });
-
-    const data = await res.json();
-    console.log("MARK PAID RESPONSE:", data);
-
-    if (data.error) {
-      console.error(data.error);
-      return;
-    }
-
-    fetchOrders();
   } catch (err) {
-    console.error("REQUEST FAILED:", err);
+    console.error("API FAILED — fallback UI update");
   }
+
+  // ✅ FORCE UI UPDATE (fallback)
+  setOrders((prev) =>
+    prev.map((item) =>
+      item.id === o.id ? { ...item, [field]: true } : item
+    )
+  );
+
+  // ✅ HARD REFRESH
+  setTimeout(() => {
+    fetchOrders();
+  }, 500);
 };
 
+  // 💰 MARK PAID
+  const markPaid = async (o: any) => {
+    try {
+      const res = await fetch("/api/mark-paid", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: o.id }),
+      });
 
- return (
-  <div style={{ padding: 20, background: "#000", color: "#fff" }}>
-    <h1>PRODUCTION BOARD</h1>
+      const data = await res.json();
+      console.log("MARK PAID RESPONSE:", data);
 
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
-        gap: 20,
-      }}
-    >
-      {["shoot", "edit", "print", "done"].map((stage) => (
-        <div key={stage}>
-          <h3 style={{ marginBottom: 10 }}>
-            {stage.toUpperCase()}
-          </h3>
+      if (data.error) return;
 
-          {(grouped[stage] || []).map((o: any) => (
-            <div
-              key={o.id}
-              style={{
-                background: "#111",
-                padding: 10,
-                borderRadius: 10,
-                marginBottom: 10,
-              }} 
-        
-            >
-              <div>
-                ORD-{String(o.queue_number).padStart(3, "0")}
+      fetchOrders();
+    } catch (err) {
+      console.error("REQUEST FAILED:", err);
+    }
+  };
+
+  return (
+    <div style={{ padding: 20, background: "#292626", color: "#fff" }}>
+      <h1>PRODUCTION BOARD</h1>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 20,
+        }}
+      >
+        {["shoot", "edit", "print", "done"].map((stage) => (
+          <div key={stage}>
+            <h3 style={{ marginBottom: 10 }}>
+              {stage.toUpperCase()}
+            </h3>
+
+            {(grouped[stage as keyof typeof grouped] || []).map((o: any) => (
+              <div
+                key={o.id}
+                style={{
+                  background: "#111",
+                  padding: 10,
+                  borderRadius: 10,
+                  marginBottom: 10,
+                }}
+              >
+                <div>
+                  ORD-{String(o.queue_number).padStart(3, "0")}
+                </div>
+
+                <div>{o.name}</div>
+
+                <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                  <button
+                    onClick={() => nextStep(o)}
+                    style={{
+                      background: "#00ff9c",
+                      border: "none",
+                      padding: "6px 10px",
+                      borderRadius: 6,
+                    }}
+                  >
+                    NEXT
+                  </button>
+
+                  <button
+                    onClick={() => markPaid(o)}
+                    style={{
+                      background: "#444",
+                      border: "none",
+                      padding: "6px 10px",
+                      borderRadius: 6,
+                      color: "#fff",
+                    }}
+                  >
+                    PAID
+                  </button>
+                </div>
               </div>
-
-              <div>{o.name}</div>
-
-              <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-                <button
-                  onClick={() => nextStep(o)}
-                  style={{
-                    background: "#00ff9c",
-                    border: "none",
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                  }}
-                >
-                  NEXT →
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      ))}
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
-  </div>
-);
+  );
 }
