@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { QRCodeCanvas } from "qrcode.react";
+
+
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -9,14 +12,16 @@ export default function RegisterPage() {
   const [phone, setPhone] = useState("");
   const [pkg, setPkg] = useState("");
   const [slotTime, setSlotTime] = useState("");
+  
 
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
     
   );
-
+  
   const [qr, setQr] = useState<string | null>(null);
   const [queue, setQueue] = useState<number | null>(null);
+  const [clientName, setClientName] = useState("");
   const [fullSlots, setFullSlots] = useState<string[]>([]);
 
   // 🔥 SLOT GENERATOR
@@ -124,6 +129,54 @@ const inputStyle = {
   color: "#fff",
   border: "1px solid rgba(255,255,255,0.15)",
   outline: "none",
+};
+const handleSubmit = async () => {
+  if (!name || !email || !phone || !slotTime) {
+    alert("Please complete all fields");
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/add-order", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        email,
+        phone,
+        slot_time: slotTime,
+      }),
+    });
+
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      alert("Invalid server response");
+      return;
+    }
+
+    if (!res.ok) {
+      alert(data?.error || "Something went wrong");
+      return;
+    }
+
+    setQr(data.id); // QR uses ID (best for sorting)
+setQueue(data.queue_number);
+setClientName(data.name);
+
+alert(`Queue Number: ${data.queue_number}`);
+
+    // reset form
+    setName("");
+    setEmail("");
+    setPhone("");
+    setSlotTime("");
+  } catch (err) {
+    alert("Network error");
+  }
 };
 
  return (
@@ -235,6 +288,8 @@ const inputStyle = {
 
 {/* BUTTON */}
 <button
+  type="button"
+  onClick={handleSubmit}
   style={{
     width: "100%",
     padding: 14,
@@ -249,6 +304,34 @@ const inputStyle = {
   SUBMIT
 </button>
     </div>
+    {qr && (
+  <div
+    style={{
+      marginTop: 20,
+      padding: 15,
+      borderRadius: 12,
+      background: "rgba(0,0,0,0.4)",
+      textAlign: "center",
+    }}
+  >
+    <div style={{ marginBottom: 8 }}>
+      <strong>QUEUE #{queue}</strong>
+    </div>
+
+    <div style={{ marginBottom: 10 }}>{clientName}</div>
+
+    <QRCodeCanvas
+  value={qr}
+  size={220}
+  bgColor="#ffffff"
+  fgColor="#000000"
+/>
+
+    <div style={{ fontSize: 12, opacity: 0.6, marginTop: 8 }}>
+      Scan for photo tracking
+    </div>
+  </div>
+)}
 
     {/* 🔧 PLACEHOLDER FIX */}
     <style jsx>{`
@@ -265,5 +348,6 @@ const inputStyle = {
   }
 `}</style>
   </div>
+  
 );
 }
