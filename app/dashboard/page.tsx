@@ -109,14 +109,14 @@ export default function Dashboard() {
   "Slot",
   "Payment",
 ];
-     const rows = orders.map((o) => [
+     const rows = orders.map((o: any) => [
   `ORD-${String(o.queue_number).padStart(3, "0")}`,
   o.name,
   o.email,
   o.contact,
   o.package,
   o.slot_time,
-  o.payment_status,
+  o.payment_status || "unpaid",
 ]);
 
     let csv =
