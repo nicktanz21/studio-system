@@ -46,6 +46,9 @@ export default function ProductionPage() {
   else if (!o.edited) field = "edited";
   else if (!o.printed) field = "printed";
 
+  // ✅ FIX GOES HERE
+  if (!field) return;
+
   try {
     await fetch("/api/update-flag", {
       method: "POST",
@@ -55,17 +58,15 @@ export default function ProductionPage() {
       body: JSON.stringify({ id: o.id, field }),
     });
   } catch (err) {
-    console.error("API FAILED — fallback UI update");
+    console.error("API FAILED");
   }
 
-  // ✅ FORCE UI UPDATE (fallback)
   setOrders((prev) =>
     prev.map((item) =>
       item.id === o.id ? { ...item, [field]: true } : item
     )
   );
 
-  // ✅ HARD REFRESH
   setTimeout(() => {
     fetchOrders();
   }, 500);
