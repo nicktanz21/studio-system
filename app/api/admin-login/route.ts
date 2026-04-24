@@ -2,28 +2,20 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const cookieHeader = req.headers.get("cookie") || "";
+    const { email, password } = await req.json();
 
-console.log("COOKIE HEADER:", cookieHeader);
-
-// ✅ SAFE PARSE (DO NOT USE .includes blindly)
-const hasSession = cookieHeader
-  .split(";")
-  .map(c => c.trim())
-  .some(c => c.startsWith("admin_session="));
-
-if (!hasSession) {
-  return NextResponse.json(
-    { error: "Unauthorized" },
-    { status: 401 }
-  );
-}
+    if (
+      email === process.env.ADMIN_EMAIL &&
+      password === process.env.ADMIN_PASSWORD
+    ) {
+      return NextResponse.json({ success: true });
+    }
 
     return NextResponse.json(
       { error: "Invalid credentials" },
       { status: 401 }
     );
-  } catch {
+  } catch (err) {
     return NextResponse.json(
       { error: "Server error" },
       { status: 500 }
