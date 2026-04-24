@@ -1,64 +1,59 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
-export async function POST(req: Request) {
-  const body = await req.json();
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const date = searchParams.get("date");
 
-  const {
-    name,
-    email,
-    phone,
-    package: pkg,
-    queue_number,
-    slot_time,
-    booking_date,
-  } = body;
+  let query = supabase.from("orders").select("*");
 
-  if (!name) {
-    return NextResponse.json({ error: "Missing name" });
-  }
+  if (date) {
+  query = query.eq("booking_day", date);
+}
 
-  // ✅ CREATE SERVER CLIENT (IMPORTANT)
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-
-  // 🔢 get next queue (per day)
-  const { data: last } = await supabase
-    .from("orders")
-    .select("queue_number")
-    .eq("booking_date", booking_date)
-    .order("queue_number", { ascending: false })
-    .limit(1);
-
-  const nextNumber = (last?.[0]?.queue_number || 0) + 1;
-
-  // ✅ INSERT (BYPASS RLS)
-  const { data, error } = await supabase
-    .from("orders")
-    .insert({
-      name,
-      email,
-      phone,
-      package: pkg,
-      queue_number: queue_number || nextNumber,
-      step: "intake",
-      status: "waiting",
-      slot_time,
-      booking_date,
-      payment_status: "pending",
-      selected: false,
-      edited: false,
-      printed: false,
-      emailed: false,
-    })
-    .select()
-    .single();
+  const { data, error } = await query.order("queue_number", {
+    ascending: true,
+  });
 
   if (error) {
-    return NextResponse.json({ error: error.message });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  // Convert to CSV
+  const csv = [
+  [
+    "Order ID",
+    "Queue",
+    "Name",
+    "Email",
+    "Phone",
+    "Package",
+    "Slot",
+    "Status",
+    "Payment",
+    "Date",
+  ],
+
+  ...data.map((o) => [
+    `ORD-${String(o.queue_number).padStart(3, "0")}`, // ✅ readable ID
+    o.queue_number,
+    o.name,
+    o.email,
+    o.contact,
+    o.package,
+    o.slot_time,
+    o.status,
+    o.payment_status,
+    o.created_at_ts?.split("T")[0],
+  ]),
+]
+    .map((row) => row.join(","))
+    .join("\n");
+
+  return new Response(csv, {
+    headers: {
+      "Content-Type": "text/csv",
+      "Content-Disposition": "attachment; filename=orders.csv",
+    },
+  });
 }

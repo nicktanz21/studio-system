@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [allowed, setAllowed] = useState(false);
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [mode, setMode] = useState<"today" | "all">("today");
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -51,17 +52,20 @@ export default function Dashboard() {
 
   /* ================= FETCH ================= */
   const fetchData = async () => {
-    const { data } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("booking_date", today);
+  let query = supabase.from("orders").select("*");
 
-    if (data) setOrders(data);
-  };
+  if (mode === "today") {
+    query = query.eq("booking_date", today);
+  }
+
+  const { data } = await query;
+
+  if (data) setOrders(data);
+};
 
   useEffect(() => {
-    fetchData();
-  }, []);
+  fetchData();
+}, [mode]);
 
   /* ================= METRICS ================= */
   const total = orders.length;
@@ -97,18 +101,23 @@ export default function Dashboard() {
   /* ================= EXPORT ================= */
   const exportCSV = () => {
     const headers = [
-      "Name",
-      "Package",
-      "Slot",
-      "Payment",
-    ];
-
-    const rows = orders.map((o) => [
-      o.name,
-      o.package,
-      o.slot_time,
-      o.payment_status,
-    ]);
+  "Order ID",
+  "Name",
+  "Email",
+  "Phone",
+  "Package",
+  "Slot",
+  "Payment",
+];
+     const rows = orders.map((o) => [
+  `ORD-${String(o.queue_number).padStart(3, "0")}`,
+  o.name,
+  o.email,
+  o.contact,
+  o.package,
+  o.slot_time,
+  o.payment_status,
+]);
 
     let csv =
       "data:text/csv;charset=utf-8," +
@@ -120,11 +129,61 @@ export default function Dashboard() {
     link.click();
   };
   
-if (!allowed) return null;
 
+useEffect(() => {
+  const channel = supabase
+    .channel("orders-live")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "orders",
+      },
+      () => {
+        fetchData(); // 🔁 auto refresh
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+if (!allowed) return null;
   return (
     <div style={styles.container}>
       <h1 style={styles.title}>📊 STREAMS STUDIO DASHBOARD</h1>
+      <div style={{ marginBottom: 20 }}>
+  <button
+    onClick={() => setMode("today")}
+    style={{
+      marginRight: 10,
+      padding: "8px 12px",
+      background: mode === "today" ? "#00ff9c" : "#333",
+      border: "none",
+      color: mode === "today" ? "black" : "white",
+      borderRadius: 6,
+      cursor: "pointer",
+    }}
+  >
+    TODAY
+  </button>
+
+  <button
+    onClick={() => setMode("all")}
+    style={{
+      padding: "8px 12px",
+      background: mode === "all" ? "#00ff9c" : "#333",
+      border: "none",
+      color: mode === "all" ? "black" : "white",
+      borderRadius: 6,
+      cursor: "pointer",
+    }}
+  >
+    ALL
+  </button>
+</div>
 
       {/* METRICS */}
       <div style={styles.grid}>

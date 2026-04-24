@@ -1,201 +1,206 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
-const [orders, setOrders] = useState<any[]>([]);
-
-type Order = {
-  id: string;
-  name: string;
-  queue_number: number;
-  step: string;
-  status: "waiting" | "serving" | "done";
-};
+import { useEffect, useState } from "react";
 
 export default function DisplayPage() {
-  const params = useParams();
-  const role = params.role as string;
+  const [orders, setOrders] = useState<any[]>([]);
 
-  const [nowServing, setNowServing] = useState<Order | null>(null);
-  const [queue, setQueue] = useState<Order[]>([]);
-  const prevId = useRef<string | null>(null);
+const fetchOrders = async () => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
 
-  const formatQueue = (num?: number) =>
-    num ? "#" + String(num).padStart(3, "0") : "---";
+    const res = await fetch(`/api/orders?date=${today}`);
 
-  // 🔊 Voice (stable)
-  const speak = (text: string) => {
-    if (typeof window === "undefined") return;
+    if (!res.ok) {
+      console.error("API ERROR:", res.status);
+      return;
+    }
 
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 0.9;
-    utter.pitch = 1;
+    const data = await res.json();
 
-    window.speechSynthesis.cancel(); // prevent stacking
-    window.speechSynthesis.speak(utter);
-  };
+    if (!Array.isArray(data)) return;
 
-  // 🔥 FETCH
-  const fetchOrders = async () => {
-  const today = new Date().toISOString().split("T")[0];
-
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("booking_date", today)
-    .order("queue_number", { ascending: true });
-
-  if (error) {
-    console.error(error);
-    return;
+    setOrders(data);
+  } catch (err) {
+    console.error("FETCH FAILED:", err);
   }
+};
 
-  if (data) setOrders(data);
-
-
-    const serving = data?.find((o) => o.status === "serving");
-const waiting = data?.filter((o) => o.status === "waiting");
-
-setNowServing(serving);
-setQueue(waiting);
-  };
-
-  // 🔁 REALTIME
   useEffect(() => {
-  fetchOrders();
-
-  const interval = setInterval(() => {
     fetchOrders();
-  }, 3000); // every 3 seconds
 
-  return () => clearInterval(interval);
-}, []);
+    const interval = setInterval(() => {
+      fetchOrders();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <div style={styles.container}>
-      {/* LOGO */}
-      <img src="/logo.png" style={styles.logo} />
+  <div
+  style={{
+    minHeight: "100vh",
 
-      {/* TITLE */}
-      <div style={styles.header}>
-        <h1 style={styles.title}>STREAMS STUDIO</h1>
-        <div style={styles.station}>
-          {role?.toUpperCase()} STATION
-        </div>
-      </div>
+    // 🔥 BACKGROUND IMAGE
+    backgroundImage: "url('/bg.jpg')", // ← put your image in /public
+    backgroundSize: "cover",
+    backgroundPosition: "center",
 
-      {/* NOW SERVING */}
-      <div style={styles.card}>
-        <div style={styles.label}>NOW SERVING</div>
-
-        <div style={styles.number}>
-          {formatQueue(nowServing?.queue_number)}
-        </div>
-
-        <div style={styles.name}>
-          {nowServing?.name || "WAITING..."}
-        </div>
-      </div>
-
-      {/* QUEUE */}
-      <div style={styles.queue}>
-        <div style={styles.upNext}>UP NEXT</div>
-
-        {queue.length === 0 && (
-          <div style={{ opacity: 0.5 }}>No queue</div>
-        )}
-
-        {queue.slice(0, 3).map((q) => (
-          <div key={q.id} style={styles.queueItem}>
-            {formatQueue(q.queue_number)} — {q.name}
-          </div>
-        ))}
-      </div>
-
-      {/* 🔥 CSS ANIMATION FIX */}
-      <style jsx global>{`
-        @keyframes float {
-          0% { transform: translateY(0px); }
-          50% { transform: translateY(-12px); }
-          100% { transform: translateY(0px); }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-/* 🎨 PREMIUM STYLES */
-const styles: any = {
-  container: {
-    height: "100vh",
-    background: "radial-gradient(circle, #0b2e1f, black)",
-    color: "white",
     display: "flex",
-    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-  },
+    fontFamily: "sans-serif",
 
-  logo: {
-    width: 120,
-    marginBottom: 20,
-    animation: "float 4s ease-in-out infinite",
-    filter: "drop-shadow(0 0 25px rgba(0,255,150,0.6))",
-  },
+    position: "relative",
+  }}
+>
+  <div
+  style={{
+    position: "absolute",
+    inset: 0,
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.6), rgba(220,220,220,0.8))",
+    backdropFilter: "blur(4px)",
+  }}
+/>
+<div style={{ position: "relative", zIndex: 2 }}>
+  {/* your existing glass card */}
+</div>
+    {(() => {
+      const current = orders.find(
+        (o: any) => o.status === "serving"
+      );
 
-  header: {
-    textAlign: "center",
-    marginBottom: 20,
-  },
+      return (
+        <div
+          style={{
+            width: 420,
+            padding: 40,
+            borderRadius: 20,
 
-  title: {
-    fontSize: "2.8rem",
-    letterSpacing: "0.35rem",
-  },
+            // 🔥 GLASS
+            background: "rgba(255,255,255,0.25)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
 
-  station: {
-    opacity: 0.6,
-    fontSize: "0.9rem",
-  },
+            border: "1px solid rgba(255,255,255,0.4)",
 
-  card: {
-    background: "#111",
-    padding: "45px 90px",
-    borderRadius: 20,
-    textAlign: "center",
-    marginBottom: 30,
-    boxShadow: "0 0 60px rgba(0,255,150,0.25)",
-  },
+            boxShadow:
+              "0 20px 40px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.6)",
 
-  label: {
-    opacity: 0.6,
-    letterSpacing: 1,
-  },
+            textAlign: "center",
+          }}
+        >
+          {/* LOGO */}
+          <img
+            src="/logo.png"
+            style={{
+              height: 50,
+              opacity: 0.6,
+              marginBottom: 20,
+            }}
+          />
 
-  number: {
-    fontSize: "4.5rem",
-    fontWeight: "bold",
-    color: "#00ff9c",
-    margin: "10px 0",
-  },
+          {/* LABEL */}
+          <div
+            style={{
+              fontSize: 12,
+              letterSpacing: 3,
+              color: "#6b6b6b",
+              marginBottom: 10,
+            }}
+          >
+            NOW SERVING
+          </div>
 
-  name: {
-    fontSize: "1.5rem",
-    opacity: 0.8,
-  },
+          {/* MAIN STATE */}
+          {!current ? (
+            <div
+              style={{
+                fontSize: 20,
+                color: "#8a8a8a",
+              }}
+            >
+              Waiting...
+            </div>
+          ) : (
+            <>
+              {/* NUMBER */}
+              <div
+                style={{
+                  fontSize: 90,
+                  fontWeight: "bold",
+                  color: "#2e2e2e",
+                  textShadow:
+                    "0 10px 25px rgba(0,0,0,0.2), 0 0 10px rgba(255,255,255,0.5)",
+                  animation: "softGlow 2s ease-in-out infinite",
+                }}
+              >
+                {String(current.queue_number).padStart(3, "0")}
+              </div>
 
-  queue: {
-    textAlign: "center",
-  },
+              {/* NAME */}
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 18,
+                  color: "#555",
+                  letterSpacing: 1,
+                }}
+              >
+                {current.name}
+              </div>
+            </>
+          )}
 
-  upNext: {
-    opacity: 0.6,
-    marginBottom: 10,
-  },
+          {/* NEXT QUEUE */}
+          <div
+            style={{
+              marginTop: 25,
+              display: "flex",
+              justifyContent: "center",
+              gap: 10,
+            }}
+          >
+            {orders
+              .filter((o: any) => o.status !== "done")
+              .slice(0, 3)
+              .map((o: any) => (
+                <div
+                  key={o.id}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    background: "rgba(0,0,0,0.05)",
+                    fontSize: 12,
+                    color: "#555",
+                  }}
+                >
+                  {String(o.queue_number).padStart(3, "0")}
+                </div>
+              ))}
+          </div>
+        </div>
+      );
+    })()}
 
-  queueItem: {
-    fontSize: "1.3rem",
-    margin: 6,
-  },
-};
+    {/* ANIMATION */}
+    <style jsx>{`
+      @keyframes softGlow {
+        0% {
+          transform: scale(1);
+          opacity: 0.9;
+        }
+        50% {
+          transform: scale(1.05);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 0.9;
+        }
+      }
+    `}</style>
+  </div>
+);
+}

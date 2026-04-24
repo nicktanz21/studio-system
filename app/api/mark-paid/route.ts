@@ -1,31 +1,30 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
 export async function POST(req: Request) {
-  // 🔐 AUTH CHECK
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // 🔒 ADMIN CHECK
-  if (user.email !== "admin@streamsstudio.com") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   const { id } = await req.json();
 
-  if (!id) {
-    return NextResponse.json({ error: "Missing ID" });
-  }
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
 
-  await supabase
+  const { error } = await supabase
     .from("orders")
-    .update({ payment_status: "paid" })
+    .update({
+      payment_status: "paid",
+
+      // 🔥 force to EDIT stage
+      selected: true,
+      edited: false,
+      printed: false,
+    })
     .eq("id", id);
+
+  if (error) {
+    console.error("DB ERROR:", error);
+    return NextResponse.json({ error: error.message });
+  }
 
   return NextResponse.json({ success: true });
 }

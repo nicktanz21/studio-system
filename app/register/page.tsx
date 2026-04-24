@@ -8,10 +8,11 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [pkg, setPkg] = useState("");
-  const [slot, setSlot] = useState("");
+  const [slotTime, setSlotTime] = useState("");
 
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
+    
   );
 
   const [qr, setQr] = useState<string | null>(null);
@@ -64,14 +65,15 @@ export default function RegisterPage() {
   }, [selectedDate]);
 
   // 🔥 REGISTER (FIXED — USES API)
-  const register = async () => {
-    if (!name || !email || !phone || !pkg || !slot) {
-      return alert("Please complete all fields");
-    }
+ const register = async () => {
+  if (!name || !email || !phone || !pkg || !slotTime) {
+    return alert("Please complete all fields");
+  }
 
-    if (fullSlots.includes(slot)) {
-      return alert("This slot is FULL");
-    }
+  if (fullSlots.includes(slotTime)) {
+    return alert("This slot is FULL");
+  }
+
 
     // 👉 GET NEXT QUEUE
     const { data: last } = await supabase
@@ -85,155 +87,183 @@ export default function RegisterPage() {
 
     // ✅ CALL API INSTEAD OF DIRECT INSERT
     const res = await fetch("/api/add-order", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name,
-        email,
-        phone,
-        package: pkg,
-        queue_number: nextQueue,
-        slot_time: slot,
-        booking_date: selectedDate,
-      }),
-    });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    name,
+    email,
+    phone,
+    package: pkg,
+    slot_time: slotTime,
+    booking_date: selectedDate,
+  }),
+});
 
-    const data = await res.json();
+let data;
 
-    if (data.error) {
-      return alert(data.error);
-    }
-
-    // ✅ SUCCESS
-    setQr(data.id);
-    setQueue(nextQueue);
-
-    loadFullSlots();
-  };
-
-  return (
-    <div style={styles.container}>
-      <img src="/logo.png" style={styles.logo} />
-
-      <h1 style={styles.title}>STREAMS STUDIO</h1>
-      <p style={styles.subtitle}>Graduation Registration</p>
-
-      {!qr && (
-        <div style={styles.card}>
-          <input
-            placeholder="Full Name"
-            onChange={(e) => setName(e.target.value)}
-            style={styles.input}
-          />
-          <input
-            placeholder="Email"
-            onChange={(e) => setEmail(e.target.value)}
-            style={styles.input}
-          />
-          <input
-            placeholder="Phone"
-            onChange={(e) => setPhone(e.target.value)}
-            style={styles.input}
-          />
-
-          <select onChange={(e) => setPkg(e.target.value)} style={styles.input}>
-            <option value="">Select Package</option>
-            <option value="550">Package 550</option>
-            <option value="650">Package 650</option>
-            <option value="1250">Package 1250</option>
-          </select>
-
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            min={new Date().toISOString().split("T")[0]}
-            style={styles.input}
-          />
-
-          <select onChange={(e) => setSlot(e.target.value)} style={styles.input}>
-            <option value="">Select Time Slot</option>
-            {slots.map((s) => (
-              <option key={s} value={s} disabled={fullSlots.includes(s)}>
-                {s} {fullSlots.includes(s) ? "(FULL)" : ""}
-              </option>
-            ))}
-          </select>
-
-          <button onClick={register} style={styles.button}>
-            REGISTER
-          </button>
-        </div>
-      )}
-
-      {qr && (
-        <div style={styles.card}>
-          <h2>Registration Complete</h2>
-          <h3>Queue #{String(queue).padStart(3, "0")}</h3>
-
-          <img
-            src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${qr}`}
-            style={{ margin: 20 }}
-          />
-
-          <p>⚠️ Proceed to payment counter</p>
-
-          <button
-            onClick={() => window.location.reload()}
-            style={styles.button}
-          >
-            New Registration
-          </button>
-        </div>
-      )}
-    </div>
-  );
+try {
+  data = await res.json();
+} catch {
+  return alert("Server error");
 }
 
-const styles: any = {
-  container: {
-    minHeight: "100vh",
-    background: "radial-gradient(circle, #0b2e1f, black)",
-    color: "white",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logo: {
-    width: 120,
-    marginBottom: 10,
-  },
-  title: {
-    letterSpacing: "0.3rem",
-  },
-  subtitle: {
-    opacity: 0.7,
-    marginBottom: 20,
-  },
-  card: {
-    background: "#111",
-    padding: 30,
-    borderRadius: 20,
-    boxShadow: "0 0 40px rgba(0,255,150,0.2)",
-    textAlign: "center",
-  },
-  input: {
-    display: "block",
-    margin: "10px auto",
-    padding: 12,
-    width: 260,
-    borderRadius: 8,
-    border: "none",
-  },
-  button: {
-    marginTop: 15,
-    padding: "12px 25px",
-    background: "#00ff9c",
-    border: "none",
-    borderRadius: 10,
-    cursor: "pointer",
-  },
+if (data.error) return alert(data.error);
+
+// ✅ SUCCESS
+setQr(data.id);
+setQueue(data.queue_number);
 };
+const inputStyle = {
+  width: "100%",
+  padding: 12,
+  marginBottom: 12,
+  borderRadius: 8,
+  background: "rgba(255,255,255,0.08)",
+  color: "#fff",
+  border: "1px solid rgba(255,255,255,0.15)",
+  outline: "none",
+};
+
+ return (
+  <div
+    style={{
+      minHeight: "100vh",
+      backgroundImage: "url('/bgfront.jpg')",
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      position: "relative",
+      fontFamily: "sans-serif",
+    }}
+  >
+    {/* 🔥 DARK OVERLAY (FIXES BRIGHTNESS) */}
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background:
+          "linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.65))",
+      }}
+    />
+
+    {/* 🔥 FORM CARD */}
+    <div
+      style={{
+        position: "relative",
+        zIndex: 2,
+        width: 360,
+        padding: 30,
+        borderRadius: 16,
+
+        // 🔥 DARK GLASS (THUNDER GREY)
+        background: "rgba(30,30,30,0.55)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+
+        border: "1px solid rgba(255,255,255,0.1)",
+        boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+
+        textAlign: "center",
+        color: "#fff",
+      }}
+    >
+      {/* LOGO */}
+      <img
+        src="/logo.png"
+        style={{
+          height: 60,
+          marginBottom: 20,
+          opacity: 0.9,
+        }}
+      />
+
+      {/* TITLE */}
+      <h2
+        style={{
+          marginBottom: 20,
+          letterSpacing: 2,
+          color: "#e5e5e5",
+        }}
+      >
+        REGISTER
+      </h2>
+
+     {/* NAME */}
+<input
+  placeholder="Full Name"
+  value={name}
+  onChange={(e) => setName(e.target.value)}
+  style={inputStyle}
+/>
+
+{/* EMAIL */}
+<input
+  placeholder="Email"
+  value={email}
+  onChange={(e) => setEmail(e.target.value)}
+  style={inputStyle}
+/>
+
+{/* PHONE */}
+<input
+  placeholder="Phone Number"
+  value={phone}
+  onChange={(e) => setPhone(e.target.value)}
+  style={inputStyle}
+/>
+
+{/* TIME SLOT */}
+<select
+  value={slotTime}
+  onChange={(e) => setSlotTime(e.target.value)}
+  style={inputStyle}
+>
+  <option value="">Select Time Slot</option>
+  <option value="08:30 - 09:30">08:30 - 09:30</option>
+  <option value="09:30 - 10:30">09:30 - 10:30</option>
+  <option value="10:30 - 11:30">10:30 - 11:30</option>
+  <option value="11:30 - 12:30">11:30 - 12:30</option>
+  <option value="1:00 - 2:30">1:00 - 2:30</option>
+  <option value="2:00 - 3:30">2:00 - 3:30</option>
+  <option value="4:30 - 5:30">4:30 - 5:30</option>
+
+</select>
+
+{/* BUTTON */}
+<button
+  style={{
+    width: "100%",
+    padding: 14,
+    borderRadius: 10,
+    border: "none",
+    background: "linear-gradient(90deg, #444, #111)",
+    color: "#fff",
+    fontWeight: "bold",
+    cursor: "pointer",
+  }}
+>
+  SUBMIT
+</button>
+    </div>
+
+    {/* 🔧 PLACEHOLDER FIX */}
+    <style jsx>{`
+  input::placeholder {
+    color: #bbb;
+  }
+
+  select {
+    color: #fff;
+  }
+
+  option {
+    color: #000;
+  }
+`}</style>
+  </div>
+);
+}

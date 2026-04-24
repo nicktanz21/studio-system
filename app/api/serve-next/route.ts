@@ -2,69 +2,56 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST(req: Request) {
-  // 🔐 CREATE SERVER CLIENT (SAFE)
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  try {
+    // 🔒 CHECK ADMIN SESSION
+    const cookie = req.headers.get("cookie") || "";
 
-  // 🔐 GET TOKEN FROM FRONTEND
-  const token = req.headers.get("authorization")?.replace("Bearer ", "");
+    if (!cookie.includes("admin_session=valid")) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
 
-  if (!token) {
-    return NextResponse.json({ error: "No token" }, { status: 401 });
-  }
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
-  // 🔐 GET USER
-  const {
-    data: { user },
-  } = await supabase.auth.getUser(token);
+    const today = new Date().toISOString().split("T")[0];
 
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+    // 1. get next waiting
+    const { data: next } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("booking_day", today)
+      .eq("status", "waiting")
+      .order("queue_number", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-  // 🔐 CHECK ROLE
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+    if (!next) {
+      return NextResponse.json({ message: "No customers" });
+    }
 
-  if (!profile || profile.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // 🔄 STEP 1: FINISH CURRENT SERVING
-  const { data: current } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("status", "serving")
-    .limit(1)
-    .single();
-
-  if (current) {
+    // 2. reset current
     await supabase
       .from("orders")
-      .update({ status: "done" })
-      .eq("id", current.id);
-  }
+      .update({ status: "waiting" })
+      .eq("status", "serving")
+      .eq("booking_day", today);
 
-  // 🔄 STEP 2: GET NEXT WAITING
-  const { data: next } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("status", "waiting")
-    .order("queue_number", { ascending: true })
-    .limit(1)
-    .single();
-
-  if (next) {
+    // 3. set next
     await supabase
       .from("orders")
       .update({ status: "serving" })
       .eq("id", next.id);
-  }
 
-  return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, next });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err.message },
+      { status: 500 }
+    );
+  }
 }

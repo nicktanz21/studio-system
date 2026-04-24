@@ -2,39 +2,35 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(req: Request) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const authHeader = req.headers.get("authorization");
 
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!authHeader) {
+    return NextResponse.json({ error: "No token" }, { status: 401 });
   }
 
-  // 🔍 get role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const token = authHeader.replace("Bearer ", "");
+
+  // ✅ verify user
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser(token);
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+  }
 
   const { id, field } = await req.json();
 
-  // ✅ ALLOWED FIELDS ONLY
-  const allowedFields = ["selected", "edited", "printed"];
-
-  if (!allowedFields.includes(field)) {
-    return NextResponse.json({ error: "Invalid action" }, { status: 400 });
-  }
-
-  // ✅ STAFF + ADMIN can use this
-  if (!profile || !["admin", "staff"].includes(profile.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  await supabase
+  // ✅ dynamic update
+  const { error } = await supabase
     .from("orders")
     .update({ [field]: true })
     .eq("id", id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }

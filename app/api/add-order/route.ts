@@ -4,70 +4,85 @@ import { createClient } from "@supabase/supabase-js";
 let lastCall = 0;
 
 export async function POST(req: Request) {
-  // 🚫 rate limit
-  if (Date.now() - lastCall < 1000) {
-    return NextResponse.json({ error: "Too fast" });
-  }
-  lastCall = Date.now();
+  try {
+    if (Date.now() - lastCall < 1000) {
+      return NextResponse.json({ error: "Too fast" }, { status: 429 });
+    }
+    lastCall = Date.now();
 
-  const body = await req.json();
+    const body = await req.json();
 
-  const {
-    name,
-    email,
-    phone,
-    package: pkg,
-    queue_number,
-    slot_time,
-    booking_date,
-  } = body;
-
-  if (!name) {
-    return NextResponse.json({ error: "Missing name" });
-  }
-
-  // ✅ CREATE SERVER CLIENT (IMPORTANT)
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-
-  // 🔢 get next queue (SAFE per day)
-  const { data: last } = await supabase
-    .from("orders")
-    .select("queue_number")
-    .eq("booking_date", booking_date)
-    .order("queue_number", { ascending: false })
-    .limit(1);
-
-  const nextNumber = (last?.[0]?.queue_number || 0) + 1;
-
-  // ✅ INSERT (NOW BYPASSES RLS SAFELY)
-  const { data, error } = await supabase
-    .from("orders")
-    .insert({
+    const {
       name,
       email,
       phone,
       package: pkg,
-      queue_number: queue_number || nextNumber,
-      step: "intake",
-      status: "waiting",
       slot_time,
-      booking_date,
-      payment_status: "pending",
-      selected: false,
-      edited: false,
-      printed: false,
-      emailed: false,
-    })
-    .select()
-    .single();
+      booking_day,
+    } = body;
 
-  if (error) {
-    return NextResponse.json({ error: error.message });
+    if (!name) {
+      return NextResponse.json({ error: "Missing name" }, { status: 400 });
+    }
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const safeDate =
+      booking_day || new Date().toISOString().split("T")[0];
+
+    const { data: existing, error: countError } = await supabase
+  .from("orders")
+  .select("id")
+  .eq("booking_day", safeDate)
+  .eq("slot_time", slot_time);
+
+if (countError) {
+  return NextResponse.json({ error: countError.message }, { status: 500 });
+}
+
+if (existing.length >= 5) {
+  return NextResponse.json(
+    { error: "This time slot is already full" },
+    { status: 400 }
+  );
+}
+
+const { data: lastInSlot } = await supabase
+  .from("orders")
+  .select("queue_number")
+  .eq("booking_day", safeDate)
+  .eq("slot_time", slot_time)
+  .order("queue_number", { ascending: false })
+  .limit(1);
+
+const nextNumber = (lastInSlot?.[0]?.queue_number || 0) + 1;
+
+    const { data, error } = await supabase
+      .from("orders")
+      .insert([
+        {
+          name,
+          email,
+          contact: phone,
+          package: pkg,
+          slot_time,
+          queue_number: nextNumber,
+          status: "waiting",
+          booking_day: safeDate,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
-
-  return NextResponse.json(data);
-  
 }
